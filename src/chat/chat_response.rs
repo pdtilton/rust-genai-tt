@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::ModelIden;
 use crate::chat::{ChatStream, MessageContent, ToolCall, Usage};
 
+use super::ImageSource;
+
 // region:    --- ChatResponse
 
 /// The Chat response when performing a direct `Client::`
@@ -36,6 +38,10 @@ impl ChatResponse {
 	/// Otherwise, returns None
 	pub fn content_text_as_str(&self) -> Option<&str> {
 		self.content.as_ref().and_then(MessageContent::text_as_str)
+	}
+
+	pub fn content_as_b64_image(&self) -> Option<&ImageSource> {
+		self.content.as_ref().and_then(MessageContent::image_as_b64_str)
 	}
 
 	/// Consumes the ChatResponse and returns the eventual String content of the `MessageContent::Text`

@@ -66,6 +66,28 @@ impl MessageContent {
 		}
 	}
 
+	pub fn image_as_b64_str(&self) -> Option<&ImageSource> {
+		match self {
+			MessageContent::Parts(parts) => {
+				for pt in parts {
+					match pt {
+						ContentPart::Image {
+							content_type: _,
+							source,
+						} => {
+							return Some(source);
+						}
+						ContentPart::Text(_) => {}
+					}
+				}
+				None
+			}
+			MessageContent::Text(_) => None,
+			MessageContent::ToolCalls(_) => None,
+			MessageContent::ToolResponses(_) => None,
+		}
+	}
+
 	/// Checks if the text content or the tool calls are empty.
 	pub fn is_empty(&self) -> bool {
 		match self {

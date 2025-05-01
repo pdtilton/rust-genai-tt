@@ -7,7 +7,7 @@ use genai::resolver::AuthData;
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>; // For tests.
 
 // "gemini-2.0-flash", "gemini-2.0-flash-001", "gemini-2.0-flash-lite" (somehow function calling work with -lite)
-const MODEL: &str = "gemini-2.0-flash";
+const MODEL: &str = "gemini-2.0-flash-exp-image-generation";
 
 // region:    --- Chat
 
@@ -68,6 +68,11 @@ async fn test_chat_stream_capture_all_ok() -> Result<()> {
 #[tokio::test]
 async fn test_chat_image_b64_ok() -> Result<()> {
 	common_tests::common_test_chat_image_b64_ok(MODEL).await
+}
+
+#[tokio::test]
+async fn test_chat_response_image_b64_ok() -> Result<()> {
+	common_tests::common_test_chat_response_image_b64_ok(MODEL).await
 }
 // endregion: --- Image Test
 

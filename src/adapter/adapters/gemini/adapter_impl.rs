@@ -138,6 +138,12 @@ impl Adapter for GeminiAdapter {
 		if let Some(top_p) = options_set.top_p() {
 			payload.x_insert("/generationConfig/topP", top_p)?;
 		}
+		if !options_set.response_modality().is_empty() {
+			payload.x_insert(
+				"/generationConfig/responseModalities",
+				json!(options_set.response_modality()),
+			)?;
+		}
 
 		Ok(WebRequestData { url, headers, payload })
 	}
@@ -160,6 +166,10 @@ impl Adapter for GeminiAdapter {
 		let content = match content {
 			Some(GeminiChatContent::Text(content)) => Some(MessageContent::from_text(content)),
 			Some(GeminiChatContent::ToolCall(tool_call)) => Some(MessageContent::from_tool_calls(vec![tool_call])),
+			Some(GeminiChatContent::InlineData(inline_data)) => Some(MessageContent::Parts(vec![ContentPart::Image {
+				content_type: inline_data.mine_type,
+				source: ImageSource::Base64(inline_data.data.into()),
+			}])),
 			None => None,
 		};
 
@@ -203,18 +213,32 @@ impl GeminiAdapter {
 		}
 
 		let mut response = body.x_take::<Value>("/candidates/0/content/parts/0")?;
-		let content = match response.x_take::<Value>("functionCall") {
-			Ok(f) => Some(GeminiChatContent::ToolCall(ToolCall {
+		let content = if let Ok(f) = response.x_take::<Value>("functionCall") {
+			Some(GeminiChatContent::ToolCall(ToolCall {
 				call_id: f.x_get("name").unwrap_or("".to_string()), // TODO: Handle this, gemini does not return the call_id
 				fn_name: f.x_get("name").unwrap_or("".to_string()),
 				fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-			})),
-			Err(_) => response
-				.x_take::<Value>("text")
-				.ok()
-				.and_then(|v| v.as_str().map(String::from))
-				.map(GeminiChatContent::Text),
+			}))
+		} else if let Ok(f) = response.x_take::<Value>("text") {
+			f.as_str().map(String::from).map(GeminiChatContent::Text)
+		} else if let Ok(f) = response.x_take::<Value>("inlineData") {
+			match f.x_get("data") {
+				Ok(data) => match f.x_get("mimeType") {
+					Ok(mine_type) => Some(GeminiChatContent::InlineData(InlineData { data, mine_type })),
+					Err(_) => {
+						tracing::warn!("mineType not found in inlineData");
+						None
+					}
+				},
+				Err(_) => {
+					tracing::warn!("data not found in inlineData");
+					None
+				}
+			}
+		} else {
+			None
 		};
+
 		let usage = body.x_take::<Value>("usageMetadata").map(Self::into_usage).unwrap_or_default();
 
 		Ok(GeminiChatResponse { content, usage })
@@ -442,9 +466,15 @@ pub(super) struct GeminiChatResponse {
 	pub usage: Usage,
 }
 
+pub(super) struct InlineData {
+	pub data: String,
+	pub mine_type: String,
+}
+
 pub(super) enum GeminiChatContent {
 	Text(String),
 	ToolCall(ToolCall),
+	InlineData(InlineData),
 }
 
 struct GeminiChatRequestParts {

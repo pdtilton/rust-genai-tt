@@ -6,11 +6,12 @@ use crate::support::{
 };
 use genai::adapter::AdapterKind;
 use genai::chat::{
-	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ContentPart, ImageSource, JsonSpec, Tool,
-	ToolResponse,
+	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ContentPart, ImageSource, JsonSpec,
+	ResponseModality, Tool, ToolResponse,
 };
 use genai::resolver::{AuthData, AuthResolver, AuthResolverFn, IntoAuthResolverFn};
 use genai::{Client, ClientConfig, ModelIden};
+use reqwest::Response;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use value_ext::JsonValueExt;
@@ -570,6 +571,27 @@ pub async fn common_test_chat_image_b64_ok(model: &str) -> Result<()> {
 	// -- Check
 	let res = chat_res.content_text_as_str().ok_or("Should have text result")?;
 	assert_contains(res, "duck");
+
+	Ok(())
+}
+
+pub async fn common_test_chat_response_image_b64_ok(model: &str) -> Result<()> {
+	// -- Setup
+	let client = Client::default();
+
+	// -- Build & Exec
+	let mut chat_req = ChatRequest::default(); //.with_system("Answer in one sentence");
+	// This is similar to sending initial system chat messages (which will be cumulative with system chat messages)
+	chat_req = chat_req.append_message(ChatMessage::user(vec![ContentPart::from_text(
+		"Generate a small picture of a duck?",
+	)]));
+
+	let options = ChatOptions::default().with_response_modality(vec![ResponseModality::Text, ResponseModality::Image]);
+
+	let chat_res = client.exec_chat(model, chat_req, Some(&options)).await?;
+
+	// -- Check
+	let res = chat_res.content_as_b64_image().ok_or("Should have image result")?;
 
 	Ok(())
 }

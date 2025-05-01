@@ -53,6 +53,8 @@ pub struct ChatOptions {
 	pub normalize_reasoning_content: Option<bool>,
 
 	pub reasoning_effort: Option<ReasoningEffort>,
+
+	pub response_modality: Vec<ResponseModality>,
 }
 
 /// Chainable Setters
@@ -114,6 +116,11 @@ impl ChatOptions {
 		self
 	}
 
+	pub fn with_response_modality(mut self, values: Vec<ResponseModality>) -> Self {
+		self.response_modality = values;
+		self
+	}
+
 	// -- Deprecated
 
 	/// Set the `json_mode` for this request.
@@ -131,6 +138,12 @@ impl ChatOptions {
 		}
 		self
 	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ResponseModality {
+	Text,
+	Image,
 }
 
 // region:    --- ReasoningEffort
@@ -257,6 +270,10 @@ impl ChatOptionsSet<'_, '_> {
 		self.chat
 			.and_then(|chat| chat.reasoning_effort.as_ref())
 			.or_else(|| self.client.and_then(|client| client.reasoning_effort.as_ref()))
+	}
+
+	pub fn response_modality(&self) -> &[ResponseModality] {
+		self.chat.map(|chat| chat.response_modality.as_ref()).unwrap_or(&[])
 	}
 
 	/// Returns true only if there is a ChatResponseFormat::JsonMode
