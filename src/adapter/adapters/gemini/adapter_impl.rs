@@ -75,6 +75,7 @@ impl Adapter for GeminiAdapter {
 			system,
 			contents,
 			tools,
+			safety_settings,
 		} = Self::into_gemini_request_parts(model, chat_req)?;
 
 		// -- Playload
@@ -105,6 +106,10 @@ impl Adapter for GeminiAdapter {
 					"function_declarations": tools
 				}),
 			)?;
+		}
+
+		if let Some(safety_settings) = safety_settings {
+			payload.x_insert("safetySettings", json!(safety_settings))?;
 		}
 
 		// -- Response Format
@@ -451,10 +456,15 @@ impl GeminiAdapter {
 				.collect::<Vec<Value>>()
 		});
 
+		let safety_settings = chat_req
+			.safety_settings
+			.map(|safety| safety.into_iter().map(|setting| json!(setting)).collect::<Vec<Value>>());
+
 		Ok(GeminiChatRequestParts {
 			system,
 			contents,
 			tools,
+			safety_settings,
 		})
 	}
 }
@@ -484,6 +494,8 @@ struct GeminiChatRequestParts {
 
 	/// The tools to use
 	tools: Option<Vec<Value>>,
+
+	safety_settings: Option<Vec<Value>>,
 }
 
 // endregion: --- Support

@@ -3,6 +3,32 @@
 use crate::chat::{ChatMessage, ChatRole, MessageContent, Tool};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SafetySettings {
+	pub category: HarmCategory,
+	pub threshold: SafetyThreshold,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HarmCategory {
+	Harassment,
+	HateSpeech,
+	SexuallyExplicit,
+	Dangerous,
+	CivicIntegrity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SafetyThreshold {
+	BlockNone,
+	BlockOnlyHigh,
+	BlockMediumAndAbove,
+	BlockLowAndAbove,
+	HarmThresholdUnspecified,
+}
+
 // region:    --- ChatRequest
 
 /// The Chat request when performing a direct `Client::`
@@ -15,6 +41,8 @@ pub struct ChatRequest {
 	pub messages: Vec<ChatMessage>,
 
 	pub tools: Option<Vec<Tool>>,
+
+	pub safety_settings: Option<Vec<SafetySettings>>,
 }
 
 /// Constructors
@@ -25,6 +53,7 @@ impl ChatRequest {
 			messages,
 			system: None,
 			tools: None,
+			safety_settings: None,
 		}
 	}
 
@@ -34,6 +63,7 @@ impl ChatRequest {
 			system: Some(content.into()),
 			messages: Vec::new(),
 			tools: None,
+			safety_settings: None,
 		}
 	}
 
@@ -43,6 +73,7 @@ impl ChatRequest {
 			system: None,
 			messages: vec![ChatMessage::user(content.into())],
 			tools: None,
+			safety_settings: None,
 		}
 	}
 
@@ -52,6 +83,7 @@ impl ChatRequest {
 			system: None,
 			messages,
 			tools: None,
+			safety_settings: None,
 		}
 	}
 }
@@ -82,6 +114,13 @@ impl ChatRequest {
 
 	pub fn append_tool(mut self, tool: impl Into<Tool>) -> Self {
 		self.tools.get_or_insert_with(Vec::new).push(tool.into());
+		self
+	}
+
+	pub fn append_safety_settings(mut self, safety_settings: Vec<SafetySettings>) -> Self {
+		if !safety_settings.is_empty() {
+			self.safety_settings = Some(safety_settings);
+		}
 		self
 	}
 }

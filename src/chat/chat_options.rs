@@ -141,6 +141,7 @@ impl ChatOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ResponseModality {
 	Text,
 	Image,
@@ -273,7 +274,7 @@ impl ChatOptionsSet<'_, '_> {
 	}
 
 	pub fn response_modality(&self) -> &[ResponseModality] {
-		self.chat.map(|chat| chat.response_modality.as_ref()).unwrap_or(&[])
+		self.chat.map(|chat| chat.response_modality.as_ref()).unwrap_or_default()
 	}
 
 	/// Returns true only if there is a ChatResponseFormat::JsonMode
