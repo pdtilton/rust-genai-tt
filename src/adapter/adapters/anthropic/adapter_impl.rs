@@ -188,7 +188,7 @@ impl Adapter for AnthropicAdapter {
 		};
 
 		Ok(ChatResponse {
-			content,
+			content: content.map(|c| vec![c]).unwrap_or_default(),
 			reasoning_content: None,
 			model_iden,
 			provider_model_iden,

@@ -12,27 +12,27 @@ const MODEL: &str = "gemini-2.0-flash-exp-image-generation";
 // region:    --- Chat
 
 #[tokio::test]
-async fn test_chat_simple_ok() -> Result<()> {
+async fn g_test_chat_simple_ok() -> Result<()> {
 	common_tests::common_test_chat_simple_ok(MODEL, None).await
 }
 
 #[tokio::test]
-async fn test_chat_multi_system_ok() -> Result<()> {
+async fn g_test_chat_multi_system_ok() -> Result<()> {
 	common_tests::common_test_chat_multi_system_ok(MODEL).await
 }
 
 #[tokio::test]
-async fn test_chat_json_structured_ok() -> Result<()> {
+async fn g_test_chat_json_structured_ok() -> Result<()> {
 	common_tests::common_test_chat_json_structured_ok(MODEL, Some(Check::USAGE)).await
 }
 
 #[tokio::test]
-async fn test_chat_temperature_ok() -> Result<()> {
+async fn g_test_chat_temperature_ok() -> Result<()> {
 	common_tests::common_test_chat_temperature_ok(MODEL).await
 }
 
 #[tokio::test]
-async fn test_chat_stop_sequences_ok() -> Result<()> {
+async fn g_test_chat_stop_sequences_ok() -> Result<()> {
 	common_tests::common_test_chat_stop_sequences_ok(MODEL).await
 }
 
@@ -41,17 +41,17 @@ async fn test_chat_stop_sequences_ok() -> Result<()> {
 // region:    --- Chat Stream Tests
 
 #[tokio::test]
-async fn test_chat_stream_simple_ok() -> Result<()> {
+async fn g_test_chat_stream_simple_ok() -> Result<()> {
 	common_tests::common_test_chat_stream_simple_ok(MODEL, None).await
 }
 
 #[tokio::test]
-async fn test_chat_stream_capture_content_ok() -> Result<()> {
+async fn g_test_chat_stream_capture_content_ok() -> Result<()> {
 	common_tests::common_test_chat_stream_capture_content_ok(MODEL).await
 }
 
 #[tokio::test]
-async fn test_chat_stream_capture_all_ok() -> Result<()> {
+async fn g_test_chat_stream_capture_all_ok() -> Result<()> {
 	common_tests::common_test_chat_stream_capture_all_ok(MODEL, None).await
 }
 
@@ -61,17 +61,17 @@ async fn test_chat_stream_capture_all_ok() -> Result<()> {
 
 // NOTE: Gemini does not seem to support URL
 // #[tokio::test]
-// async fn test_chat_image_url_ok() -> Result<()> {
+// async fn g_test_chat_image_url_ok() -> Result<()> {
 // 	common_tests::common_test_chat_image_url_ok(MODEL).await
 // }
 
 #[tokio::test]
-async fn test_chat_image_b64_ok() -> Result<()> {
+async fn g_test_chat_image_b64_ok() -> Result<()> {
 	common_tests::common_test_chat_image_b64_ok(MODEL).await
 }
 
 #[tokio::test]
-async fn test_chat_response_image_b64_ok() -> Result<()> {
+async fn g_test_chat_response_image_b64_ok() -> Result<()> {
 	common_tests::common_test_chat_response_image_b64_ok(MODEL).await
 }
 // endregion: --- Image Test
@@ -79,12 +79,12 @@ async fn test_chat_response_image_b64_ok() -> Result<()> {
 // region:    --- Tool Tests
 
 #[tokio::test]
-async fn test_tool_simple_ok() -> Result<()> {
+async fn g_test_tool_simple_ok() -> Result<()> {
 	common_tests::common_test_tool_simple_ok(MODEL, true).await
 }
 
 #[tokio::test]
-async fn test_tool_full_flow_ok() -> Result<()> {
+async fn g_test_tool_full_flow_ok() -> Result<()> {
 	common_tests::common_test_tool_full_flow_ok(MODEL, true).await
 }
 // endregion: --- Tool Tests
@@ -92,7 +92,7 @@ async fn test_tool_full_flow_ok() -> Result<()> {
 // region:    --- Resolver Tests
 
 #[tokio::test]
-async fn test_resolver_auth_ok() -> Result<()> {
+async fn g_test_resolver_auth_ok() -> Result<()> {
 	common_tests::common_test_resolver_auth_ok(MODEL, AuthData::from_env("GEMINI_API_KEY")).await
 }
 
@@ -101,8 +101,13 @@ async fn test_resolver_auth_ok() -> Result<()> {
 // region:    --- List
 
 #[tokio::test]
-async fn test_list_models() -> Result<()> {
+async fn g_test_list_models() -> Result<()> {
 	common_tests::common_test_list_models(AdapterKind::Gemini, "gemini-1.5-pro").await
 }
 
 // endregion: --- List
+
+#[tokio::test]
+async fn g_test_safety_settings_ok() -> Result<()> {
+	common_tests::common_test_safety_settings_ok(MODEL).await
+}

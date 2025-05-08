@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use super::ChatResponse;
+
 type InterStreamType = Pin<Box<dyn Stream<Item = crate::Result<InterStreamEvent>> + Send>>;
 
 /// ChatStream is a Rust Future Stream that iterates through the events of a chat stream request.
@@ -38,10 +40,7 @@ impl Stream for ChatStream {
 			Poll::Ready(Some(Ok(event))) => {
 				let chat_event = match event {
 					InterStreamEvent::Start => ChatStreamEvent::Start,
-					InterStreamEvent::Chunk(content) => ChatStreamEvent::Chunk(StreamChunk { content }),
-					InterStreamEvent::ReasoningChunk(content) => {
-						ChatStreamEvent::ReasoningChunk(StreamChunk { content })
-					}
+					InterStreamEvent::Chunk(content) => ChatStreamEvent::Chunk(content),
 					InterStreamEvent::End(inter_end) => ChatStreamEvent::End(inter_end.into()),
 				};
 				Poll::Ready(Some(Ok(chat_event)))
@@ -63,11 +62,8 @@ pub enum ChatStreamEvent {
 	/// Represents the start of the stream. The first event.
 	Start,
 
-	/// Represents each content chunk. Currently, it only contains text content.
-	Chunk(StreamChunk),
-
-	/// Represents the reasoning_content chunk.
-	ReasoningChunk(StreamChunk),
+	/// Represents each content chunk.
+	Chunk(ChatResponse),
 
 	/// Represents the end of the stream.
 	/// It will have the `.captured_usage` and `.captured_content` if specified in the `ChatOptions`.
@@ -80,6 +76,12 @@ pub enum ChatStreamEvent {
 pub struct StreamChunk {
 	/// The content text.
 	pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InlineData {
+	pub data: String,
+	pub mime_type: String,
 }
 
 /// StreamEnd content, with the eventual `.captured_usage` and `.captured_content`.

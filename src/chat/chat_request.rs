@@ -10,12 +10,16 @@ pub struct SafetySettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HarmCategory {
+	#[serde(rename = "HARM_CATEGORY_HARASSMENT")]
 	Harassment,
+	#[serde(rename = "HARM_CATEGORY_HATE_SPEECH")]
 	HateSpeech,
+	#[serde(rename = "HARM_CATEGORY_SEXUALLY_EXPLICIT")]
 	SexuallyExplicit,
+	#[serde(rename = "HARM_CATEGORY_DANGEROUS")]
 	Dangerous,
+	#[serde(rename = "HARM_CATEGORY_CIVIC_INTEGRITY")]
 	CivicIntegrity,
 }
 

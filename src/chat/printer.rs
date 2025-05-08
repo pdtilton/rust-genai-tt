@@ -1,7 +1,7 @@
 //! Printer utility to help print a chat stream
 //! > Note: This is primarily for quick testing and temporary debugging
 
-use crate::chat::{ChatStreamEvent, ChatStreamResponse, StreamChunk};
+use crate::chat::{ChatStreamEvent, ChatStreamResponse};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncWriteExt as _, Stdout};
@@ -52,64 +52,102 @@ async fn print_chat_stream_inner(
 
 	let print_events = options.and_then(|o| o.print_events).unwrap_or_default();
 
-	let mut first_chunk = true;
-	let mut first_reasoning_chunk = true;
-
 	while let Some(Ok(stream_event)) = stream.next().await {
-		let (event_info, content) = {
+		let event_messages = {
+			let mut messages = Vec::new();
+
 			match stream_event {
 				ChatStreamEvent::Start => {
 					if print_events {
 						// TODO: Might implement pretty JSON formatting
-						(Some("\n-- ChatStreamEvent::Start\n".to_string()), None)
-					} else {
-						(None, None)
+						messages.push(("\n-- ChatStreamEvent::Start\n".to_string(), None))
 					}
 				}
+				ChatStreamEvent::Chunk(chunk) => {
+					let mut content = Vec::new();
 
-				ChatStreamEvent::Chunk(StreamChunk { content }) => {
-					if print_events && first_chunk {
-						first_chunk = false;
-						(
-							Some("\n-- ChatStreamEvent::Chunk (concatenated):\n".to_string()),
-							Some(content),
-						)
-					} else {
-						(None, Some(content))
+					for msg_content in chunk.content {
+						match msg_content {
+							super::MessageContent::Text(text) => {
+								content.push(text);
+							}
+							super::MessageContent::Parts(content_parts) => {
+								for part in content_parts {
+									match part {
+										super::ContentPart::Text(text) => {
+											content.push(text);
+										}
+										super::ContentPart::Image { content_type, source } => {
+											let event_info =
+												format!("\n-- ChatStreamEvent InlineData {}\n", content_type);
+											let msg = match source {
+												super::ImageSource::Base64(data) => {
+													format!("Base64: {data}\n")
+												}
+												super::ImageSource::Url(url) => {
+													format!("url: {url}\n")
+												}
+											};
+											messages.push((event_info, Some(msg)))
+										}
+									}
+								}
+							}
+							super::MessageContent::ToolCalls(tool_calls) => {
+								for tool_call in tool_calls {
+									messages.push((
+										"\n-- ChatStreamEvent Tool Call\n".to_string(),
+										Some(format!(
+											"id: {} fn: {} args:{}",
+											tool_call.call_id, tool_call.fn_name, tool_call.fn_arguments
+										)),
+									));
+								}
+							}
+							super::MessageContent::ToolResponses(tool_responses) => {
+								for tool_response in tool_responses {
+									messages.push((
+										"\n-- ChatStreamEvent Tool Call Response\n".to_string(),
+										Some(format!(
+											"id: {} result: {}",
+											tool_response.call_id, tool_response.content
+										)),
+									));
+								}
+							}
+						}
 					}
-				}
 
-				ChatStreamEvent::ReasoningChunk(StreamChunk { content }) => {
-					if print_events && first_reasoning_chunk {
-						first_reasoning_chunk = false;
-						(
-							Some("\n-- ChatStreamEvent::ReasoningChunk (concatenated):\n".to_string()),
-							Some(content),
-						)
-					} else {
-						(None, Some(content))
+					if !content.is_empty() {
+						messages.push((format!("\n-- ChatStreamEvent Text\n"), Some(content.join(" "))));
+					}
+
+					if let Some(reasoning_content) = chunk.reasoning_content {
+						messages.push((
+							format!("\n-- ChatStreamEvent Reasoning Text\n"),
+							Some(reasoning_content),
+						));
 					}
 				}
 
 				ChatStreamEvent::End(end_event) => {
 					if print_events {
 						// TODO: Might implement pretty JSON formatting
-						(Some(format!("\n\n-- ChatStreamEvent::End {end_event:?}\n")), None)
-					} else {
-						(None, None)
+						messages.push((format!("\n\n-- ChatStreamEvent::End {end_event:?}\n"), None));
 					}
 				}
 			}
+
+			messages
 		};
 
-		if let Some(event_info) = event_info {
+		for (event_info, content) in event_messages {
 			stdout.write_all(event_info.as_bytes()).await?;
+			if let Some(content) = content {
+				content_capture.push_str(&content);
+				stdout.write_all(content.as_bytes()).await?;
+			}
 		}
-
-		if let Some(content) = content {
-			content_capture.push_str(&content);
-			stdout.write_all(content.as_bytes()).await?;
-		};
 
 		stdout.flush().await?;
 	}

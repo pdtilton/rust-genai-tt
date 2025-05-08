@@ -13,7 +13,7 @@ use super::ImageSource;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
 	/// The eventual content of the chat response
-	pub content: Option<MessageContent>,
+	pub content: Vec<MessageContent>,
 
 	/// The eventual reasoning content,
 	pub reasoning_content: Option<String>,
@@ -34,36 +34,52 @@ pub struct ChatResponse {
 
 // Getters
 impl ChatResponse {
-	/// Returns the eventual content as `&str` if it is of type `MessageContent::Text`
-	/// Otherwise, returns None
-	pub fn content_text_as_str(&self) -> Option<&str> {
-		self.content.as_ref().and_then(MessageContent::text_as_str)
-	}
-
-	pub fn content_as_b64_image(&self) -> Option<&ImageSource> {
-		self.content.as_ref().and_then(MessageContent::image_as_b64_str)
+	pub fn content_as_b64_image(&self) -> Vec<&ImageSource> {
+		//self.content.as_ref().and_then(MessageContent::image_as_b64_str)
+		self.content.iter().filter_map(MessageContent::image_as_b64_str).collect()
 	}
 
 	/// Consumes the ChatResponse and returns the eventual String content of the `MessageContent::Text`
 	/// Otherwise, returns None
-	pub fn content_text_into_string(self) -> Option<String> {
-		self.content.and_then(MessageContent::text_into_string)
-	}
-
-	pub fn tool_calls(&self) -> Option<Vec<&ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.content.as_ref() {
-			Some(tool_calls.iter().collect())
+	pub fn content_text_to_string(&self) -> Option<String> {
+		if !self.content.is_empty() {
+			Some(
+				self.content
+					.iter()
+					.filter_map(MessageContent::text_to_string)
+					.collect::<Vec<String>>()
+					.join(" "),
+			)
 		} else {
 			None
 		}
 	}
 
-	pub fn into_tool_calls(self) -> Option<Vec<ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.content {
-			Some(tool_calls)
-		} else {
-			None
-		}
+	pub fn tool_calls(&self) -> Vec<&ToolCall> {
+		self.content
+			.iter()
+			.filter_map(|t| match t {
+				MessageContent::ToolCalls(tool_calls) => Some(tool_calls),
+				_ => None,
+			})
+			.collect::<Vec<&Vec<ToolCall>>>()
+			.into_iter()
+			.flatten()
+			.collect()
+	}
+
+	pub fn into_tool_calls(&self) -> Vec<ToolCall> {
+		self.content
+			.iter()
+			.filter_map(|t| match t {
+				MessageContent::ToolCalls(tool_calls) => Some(tool_calls),
+				_ => None,
+			})
+			.collect::<Vec<&Vec<ToolCall>>>()
+			.into_iter()
+			.flatten()
+			.cloned()
+			.collect()
 	}
 }
 

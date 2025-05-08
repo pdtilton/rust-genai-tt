@@ -41,7 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let chat_res = client.exec_chat(MODEL, chat_req.clone(), None).await?;
 
 	// 4. Extract the tool calls from the response
-	let tool_calls = chat_res.into_tool_calls().ok_or("Expected tool calls in the response")?;
+	let tool_calls = chat_res.into_tool_calls();
+
+	let _ = tool_calls.first().ok_or("Expected tool calls in the response")?;
 
 	println!("--- Tool calls received:");
 	for tool_call in &tool_calls {

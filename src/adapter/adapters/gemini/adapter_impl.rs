@@ -3,12 +3,13 @@ use crate::adapter::gemini::GeminiStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream, ChatStreamResponse,
-	ContentPart, ImageSource, MessageContent, ToolCall, Usage,
+	ContentPart, ImageSource, MessageContent, ToolCall, ToolResponse, Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::{WebResponse, WebStream};
 use crate::{Error, ModelIden, Result, ServiceTarget};
 use reqwest::RequestBuilder;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use value_ext::JsonValueExt;
 
@@ -23,6 +24,388 @@ const MODELS: &[&str] = &["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1
 
 impl GeminiAdapter {
 	pub const API_KEY_DEFAULT_ENV_NAME: &str = "GEMINI_API_KEY";
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Blob {
+	mime_type: String,
+	data: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileData {
+	mime_type: String,
+	file_uri: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FunctionCall {
+	id: String,
+	name: String,
+	args: Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FunctionResponse {
+	id: String,
+	name: String,
+	response: Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum Language {
+	Python,
+	LanguageUnspecified,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecutableCode {
+	language: Language,
+	code: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Outcome {
+	OutcomeUnspecified,
+	OutcomeOk,
+	OutcomeFailed,
+	OutcomeDeadlineExceeded,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeExecutionResult {
+	outcome: Outcome,
+	output: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Part {
+	Tought(()),
+	// data
+	Text(String),
+	InlineData(Blob),
+	FunctionCall(FunctionCall),
+	FunctionRresponse(FunctionResponse),
+	FileData(FileData),
+	ExecutableCode(ExecutableCode),
+	CodeExecutionResult(CodeExecutionResult),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Content {
+	#[serde(default)]
+	parts: Vec<Part>,
+	role: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum FinishReason {
+	FinishReasonUnspecified,
+	Stop,
+	MaxTokens,
+	Safety,
+	Recitation,
+	Language,
+	Other,
+	BlockList,
+	ProhibitedContent,
+	Spii,
+	MalformedFunctionCall,
+	ImageSafety,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum HarmCategory {
+	HarmCategoryHarassment,
+	HarmCategoryHateSpeech,
+	HarmCategorySexuallyExplicit,
+	HarmCategoryDangerous,
+	HarmCategoryCivicIntegrity,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum HarmProbability {
+	HarmProbabilityUnspecified,
+	Negligible,
+	Low,
+	Medium,
+	High,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HarmBlockThreshold {
+	BlockNone,
+	BlockOnlyHigh,
+	BlockMediumAndAbove,
+	BlockLowAndAbove,
+	HarmBlockThresholdUnspecified,
+	Off,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafetyRating {
+	category: HarmCategory,
+	probability: HarmProbability,
+	blocked: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CitationSource {
+	#[serde(default)]
+	start_index: Option<u32>,
+	#[serde(default)]
+	end_index: Option<u32>,
+	#[serde(default)]
+	uri: Option<String>,
+	#[serde(default)]
+	license: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CitationMetadata {
+	#[serde(default)]
+	citation_sources: Vec<CitationSource>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroundingPassageId {
+	passage_id: String,
+	part_index: i32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticRetrieverChunk {
+	source: String,
+	chunk: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttributionSourceId {
+	// source
+	grounding_passage: GroundingPassageId,
+	semantic_retriever_chunk: SemanticRetrieverChunk,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroundingAttribution {
+	source_id: AttributionSourceId,
+	content: Content,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Web {
+	uri: String,
+	title: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroundingChunk {
+	web: Web,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Segment {
+	part_index: i32,
+	start_index: i32,
+	end_index: i32,
+	text: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroundingSupport {
+	#[serde(default)]
+	grounding_chunk_indices: Vec<i32>,
+	#[serde(default)]
+	confidence_scores: Vec<f32>,
+	segment: Segment,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchEntryPoint {
+	#[serde(default)]
+	rendered_content: Option<String>,
+	#[serde(default)]
+	sdk_blob: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RetrievalMetadata {
+	#[serde(default)]
+	google_search_dynamic_retrieval_score: Option<f32>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroundingMetadata {
+	#[serde(default)]
+	grounding_chunks: Vec<GroundingChunk>,
+	#[serde(default)]
+	grounding_supports: Vec<GroundingSupport>,
+	#[serde(default)]
+	web_search_queries: Vec<String>,
+	#[serde(default)]
+	search_entry_point: Option<SearchEntryPoint>,
+	retrieval_metadata: RetrievalMetadata,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename = "candidate")]
+struct LogCandidate {
+	token: String,
+	token_id: i32,
+	log_probability: f32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopCandidates {
+	candidates: LogCandidate,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LogprobsResult {
+	#[serde(default)]
+	top_candidates: Vec<TopCandidates>,
+	#[serde(default)]
+	chosen_candidates: Vec<LogCandidate>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlRetrievalContext {
+	retrieved_url: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlRetrievalMetadata {
+	#[serde(default)]
+	url_retrieval_contexts: Vec<UrlRetrievalContext>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Candidate {
+	content: Content,
+	#[serde(default)]
+	finish_reason: Option<FinishReason>,
+	#[serde(default)]
+	safety_ratings: Vec<SafetyRating>,
+	#[serde(default)]
+	citation_metadata: Option<CitationMetadata>,
+	#[serde(default)]
+	grounding_attributions: Vec<GroundingAttribution>,
+	#[serde(default)]
+	grounding_metadata: Option<GroundingMetadata>,
+	#[serde(default)]
+	avg_logprobs: Option<f32>,
+	#[serde(default)]
+	logprobs_result: Option<LogprobsResult>,
+	#[serde(default)]
+	url_retrieval_metadata: Option<UrlRetrievalMetadata>,
+	#[serde(default)]
+	index: Option<i32>,
+	#[serde(default)]
+	token_count: Option<i32>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum BlockReason {
+	BlockReasonUnspecified,
+	Safety,
+	Other,
+	BlockList,
+	ProhibitedContent,
+	ImageSafety,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PromptFeedBack {
+	#[serde(default)]
+	block_reason: Option<BlockReason>,
+	#[serde(default)]
+	safety_ratings: Vec<SafetyRating>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum Modality {
+	ModalityUnspecified,
+	Text,
+	Image,
+	Audio,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ModalityTokenCount {
+	modality: Modality,
+	token_count: i32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct UsageMetadata {
+	prompt_token_count: i32,
+	#[serde(default)]
+	cached_content_token_count: Option<i32>,
+	candidates_token_count: i32,
+	#[serde(default)]
+	tool_use_prompt_token_count: Option<i32>,
+	#[serde(default)]
+	thoughts_token_count: Option<i32>,
+	total_token_count: i32,
+	#[serde(default)]
+	prompt_tokens_details: Vec<ModalityTokenCount>,
+	#[serde(default)]
+	cache_tokens_details: Vec<ModalityTokenCount>,
+	#[serde(default)]
+	candidates_tokens_details: Vec<ModalityTokenCount>,
+	#[serde(default)]
+	tool_use_prompt_tokens_details: Vec<ModalityTokenCount>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ContentResponse {
+	#[serde(default)]
+	pub(super) candidates: Vec<Candidate>,
+	#[serde(default)]
+	pub(super) prompt_feedback: Option<PromptFeedBack>,
+	pub(super) usage_metadata: UsageMetadata,
+	pub(super) model_version: String,
+	#[serde(default)]
+	pub(super) error: Option<Value>,
 }
 
 impl Adapter for GeminiAdapter {
@@ -150,6 +533,9 @@ impl Adapter for GeminiAdapter {
 			)?;
 		}
 
+		println!("headers: {:?}", headers);
+		println!("sending payload: {:?}", payload);
+
 		Ok(WebRequestData { url, headers, payload })
 	}
 
@@ -158,25 +544,21 @@ impl Adapter for GeminiAdapter {
 		web_response: WebResponse,
 		_options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatResponse> {
-		let WebResponse { mut body, .. } = web_response;
+		let WebResponse { body, .. } = web_response;
+
+		println!("body: {:?}", body);
+
+		let body: ContentResponse = serde_json::from_value(body)?;
 
 		// -- Capture the provider_model_iden
 		// TODO: Need to be implemented (if available), for now, just clone model_iden
-		let provider_model_name: Option<String> = body.x_remove("modelVersion").ok();
-		let provider_model_iden = model_iden.with_name_or_clone(provider_model_name);
+		let provider_model_iden = model_iden.with_name_or_clone(Some(body.model_version.clone()));
 
-		let gemini_response = Self::body_to_gemini_chat_response(&model_iden.clone(), body)?;
-		let GeminiChatResponse { content, usage } = gemini_response;
+		let content = Self::body_to_gemini_chat_response(&model_iden.clone(), &body)?;
+		let usage = Self::into_usage(&body.usage_metadata);
 
-		let content = match content {
-			Some(GeminiChatContent::Text(content)) => Some(MessageContent::from_text(content)),
-			Some(GeminiChatContent::ToolCall(tool_call)) => Some(MessageContent::from_tool_calls(vec![tool_call])),
-			Some(GeminiChatContent::InlineData(inline_data)) => Some(MessageContent::Parts(vec![ContentPart::Image {
-				content_type: inline_data.mine_type,
-				source: ImageSource::Base64(inline_data.data.into()),
-			}])),
-			None => None,
-		};
+		println!("content: {:?}", content);
+		println!("Usage: {:?}", usage);
 
 		Ok(ChatResponse {
 			content,
@@ -208,51 +590,90 @@ impl Adapter for GeminiAdapter {
 
 /// Support functions for GeminiAdapter
 impl GeminiAdapter {
-	pub(super) fn body_to_gemini_chat_response(model_iden: &ModelIden, mut body: Value) -> Result<GeminiChatResponse> {
+	pub(super) fn body_to_gemini_chat_response(
+		model_iden: &ModelIden,
+		body: &ContentResponse,
+	) -> Result<Vec<MessageContent>> {
 		// If the body has an `error` property, then it is assumed to be an error.
-		if body.get("error").is_some() {
+		if let Some(error) = &body.error {
 			return Err(Error::StreamEventError {
 				model_iden: model_iden.clone(),
-				body,
+				body: error.clone(),
 			});
 		}
 
-		let mut response = body.x_take::<Value>("/candidates/0/content/parts/0")?;
-		let content = if let Ok(f) = response.x_take::<Value>("functionCall") {
-			Some(GeminiChatContent::ToolCall(ToolCall {
-				call_id: f.x_get("name").unwrap_or("".to_string()), // TODO: Handle this, gemini does not return the call_id
-				fn_name: f.x_get("name").unwrap_or("".to_string()),
-				fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-			}))
-		} else if let Ok(f) = response.x_take::<Value>("text") {
-			f.as_str().map(String::from).map(GeminiChatContent::Text)
-		} else if let Ok(f) = response.x_take::<Value>("inlineData") {
-			match f.x_get("data") {
-				Ok(data) => match f.x_get("mimeType") {
-					Ok(mine_type) => Some(GeminiChatContent::InlineData(InlineData { data, mine_type })),
-					Err(_) => {
-						tracing::warn!("mineType not found in inlineData");
-						None
+		//let mut response = body.x_take::<Value>("/candidates/0/content/parts/0")?;
+		let mut content = vec![];
+
+		for entry in &body.candidates {
+			let mut tool_responses = vec![];
+			let mut tool_calls = vec![];
+			let mut parts = vec![];
+
+			for candidate in &entry.content.parts {
+				match candidate {
+					Part::Text(text) => parts.push(ContentPart::Text(text.clone())),
+					Part::Tought(_) => {
+						tracing::warn!("Thought not implemented");
 					}
-				},
-				Err(_) => {
-					tracing::warn!("data not found in inlineData");
-					None
+					Part::InlineData(blob) => {
+						if blob.mime_type.starts_with("image") {
+							parts.push(ContentPart::Image {
+								content_type: blob.mime_type.clone(),
+								source: ImageSource::Base64(blob.data.clone().into()),
+							})
+						}
+					}
+					Part::FunctionCall(function_call) => {
+						tool_calls.push(ToolCall {
+							call_id: function_call.id.clone(),
+							fn_name: function_call.name.clone(),
+							fn_arguments: function_call.args.clone(),
+						});
+					}
+					Part::FunctionRresponse(function_response) => {
+						tool_responses.push(ToolResponse {
+							call_id: function_response.id.clone(),
+							content: function_response.response.to_string(),
+						});
+					}
+					Part::FileData(file_data) => {
+						if file_data.mime_type.starts_with("image") {
+							parts.push(ContentPart::Image {
+								content_type: file_data.mime_type.clone(),
+								source: ImageSource::Url(file_data.file_uri.clone()),
+							})
+						}
+					}
+					Part::ExecutableCode(_executable_code) => {
+						tracing::warn!("Executable code not implemented");
+					}
+					Part::CodeExecutionResult(_code_execution_result) => {
+						tracing::warn!("Code execution result not implemented");
+					}
 				}
 			}
-		} else {
-			None
-		};
 
-		let usage = body.x_take::<Value>("usageMetadata").map(Self::into_usage).unwrap_or_default();
+			if !parts.is_empty() {
+				content.push(MessageContent::Parts(parts));
+			}
 
-		Ok(GeminiChatResponse { content, usage })
+			if !tool_calls.is_empty() {
+				content.push(MessageContent::ToolCalls(tool_calls));
+			}
+
+			if !tool_responses.is_empty() {
+				content.push(MessageContent::ToolResponses(tool_responses));
+			}
+		}
+
+		Ok(content)
 	}
 
-	pub(super) fn into_usage(mut usage_value: Value) -> Usage {
-		let prompt_tokens: Option<i32> = usage_value.x_take("promptTokenCount").ok();
-		let completion_tokens: Option<i32> = usage_value.x_take("candidatesTokenCount").ok();
-		let total_tokens: Option<i32> = usage_value.x_take("totalTokenCount").ok();
+	pub(super) fn into_usage(usage_value: &UsageMetadata) -> Usage {
+		let prompt_tokens: Option<i32> = Some(usage_value.prompt_token_count);
+		let completion_tokens: Option<i32> = Some(usage_value.candidates_token_count);
+		let total_tokens: Option<i32> = Some(usage_value.total_token_count);
 
 		Usage {
 			prompt_tokens,
@@ -470,22 +891,6 @@ impl GeminiAdapter {
 }
 
 // struct Gemini
-
-pub(super) struct GeminiChatResponse {
-	pub content: Option<GeminiChatContent>,
-	pub usage: Usage,
-}
-
-pub(super) struct InlineData {
-	pub data: String,
-	pub mine_type: String,
-}
-
-pub(super) enum GeminiChatContent {
-	Text(String),
-	ToolCall(ToolCall),
-	InlineData(InlineData),
-}
 
 struct GeminiChatRequestParts {
 	system: Option<String>,

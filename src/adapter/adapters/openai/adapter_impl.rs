@@ -104,7 +104,7 @@ impl Adapter for OpenAIAdapter {
 		};
 
 		Ok(ChatResponse {
-			content,
+			content: content.map(|c| vec![c]).unwrap_or_default(),
 			reasoning_content,
 			model_iden,
 			provider_model_iden,

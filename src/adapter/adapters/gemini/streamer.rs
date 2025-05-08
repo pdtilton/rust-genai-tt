@@ -1,14 +1,13 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
-use crate::adapter::gemini::{GeminiAdapter, GeminiChatResponse};
+use crate::adapter::gemini::GeminiAdapter;
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::ChatOptionsSet;
+use crate::chat::{ChatOptionsSet, ChatResponse};
 use crate::webc::WebStream;
 use crate::{Error, ModelIden, Result};
-use serde_json::Value;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use super::GeminiChatContent;
+use super::ContentResponse;
 
 pub struct GeminiStreamer {
 	inner: WebStream,
@@ -47,6 +46,7 @@ impl futures::Stream for GeminiStreamer {
 					// - `[` document start
 					// - `{...}` block
 					// - `]` document end
+
 					let inter_event = match raw_message.as_str() {
 						"[" => InterStreamEvent::Start,
 						"]" => {
@@ -60,54 +60,52 @@ impl futures::Stream for GeminiStreamer {
 						}
 						block_string => {
 							// -- Parse the block to JSON
-							let json_block = match serde_json::from_str::<Value>(block_string).map_err(|serde_error| {
-								Error::StreamParse {
-									model_iden: self.options.model_iden.clone(),
-									serde_error,
-								}
-							}) {
-								Ok(json_block) => json_block,
-								Err(err) => {
-									tracing::error!("Gemini Adapter Stream Error: {}", err);
-									return Poll::Ready(Some(Err(err)));
-								}
-							};
-
-							// -- Extract the Gemini Response
-							let gemini_response =
-								match GeminiAdapter::body_to_gemini_chat_response(&self.options.model_iden, json_block)
-								{
-									Ok(gemini_response) => gemini_response,
+							let json_block =
+								match serde_json::from_str::<ContentResponse>(block_string).map_err(|serde_error| {
+									Error::StreamParse {
+										model_iden: self.options.model_iden.clone(),
+										serde_error,
+									}
+								}) {
+									Ok(json_block) => json_block,
 									Err(err) => {
 										tracing::error!("Gemini Adapter Stream Error: {}", err);
 										return Poll::Ready(Some(Err(err)));
 									}
 								};
 
-							let GeminiChatResponse { content, usage } = gemini_response;
+							// -- Extract the Gemini Response
+							let model_iden = self.options.model_iden.clone();
 
-							// -- Send Chunk event
-							if let Some(GeminiChatContent::Text(content)) = content {
-								// Capture content
-								if self.options.capture_content {
-									match self.captured_data.content {
-										Some(ref mut c) => c.push_str(&content),
-										None => self.captured_data.content = Some(content.clone()),
+							let provider_model_iden =
+								model_iden.with_name_or_clone(Some(json_block.model_version.clone()));
+
+							let content =
+								match GeminiAdapter::body_to_gemini_chat_response(&model_iden.clone(), &json_block) {
+									Ok(content) => content,
+									Err(err) => {
+										tracing::error!("Gemini Adapter Stream Error: {}", err);
+										return Poll::Ready(Some(Err(err)));
 									}
-								}
+								};
 
-								// NOTE: Apparently in the Gemini API, all events have cumulative usage,
-								//       meaning each message seems to include the tokens for all previous streams.
-								//       Thus, we do not need to add it; we only need to replace captured_data.usage with the latest one.
-								//       See https://twitter.com/jeremychone/status/1813734565967802859 for potential additional information.
-								if self.options.capture_usage {
-									self.captured_data.usage = Some(usage);
-								}
+							let usage = GeminiAdapter::into_usage(&json_block.usage_metadata);
 
-								InterStreamEvent::Chunk(content)
-							} else {
-								continue;
+							// NOTE: Apparently in the Gemini API, all events have cumulative usage,
+							//       meaning each message seems to include the tokens for all previous streams.
+							//       Thus, we do not need to add it; we only need to replace captured_data.usage with the latest one.
+							//       See https://twitter.com/jeremychone/status/1813734565967802859 for potential additional information.
+							if self.options.capture_usage {
+								self.captured_data.usage = Some(usage.clone());
 							}
+
+							InterStreamEvent::Chunk(ChatResponse {
+								content,
+								reasoning_content: None,
+								model_iden,
+								provider_model_iden,
+								usage,
+							})
 						}
 					};
 

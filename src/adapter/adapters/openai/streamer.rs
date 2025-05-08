@@ -2,7 +2,7 @@ use crate::adapter::AdapterKind;
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
 use crate::adapter::openai::OpenAIAdapter;
-use crate::chat::ChatOptionsSet;
+use crate::chat::{ChatOptionsSet, MessageContent, Usage};
 use crate::{Error, ModelIden, Result};
 use reqwest_eventsource::{Event, EventSource};
 use serde_json::Value;
@@ -122,7 +122,13 @@ impl futures::Stream for OpenAIStreamer {
 							}
 
 							// Return the Event
-							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
+							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(crate::chat::ChatResponse {
+								content: vec![MessageContent::Text(content)],
+								reasoning_content: None,
+								model_iden: self.options.model_iden.clone(),
+								provider_model_iden: self.options.model_iden.clone(),
+								usage: Usage::default(),
+							}))));
 						}
 						// -- Reasoning Content
 						else if let Some(reasoning_content) =
@@ -137,7 +143,13 @@ impl futures::Stream for OpenAIStreamer {
 							}
 
 							// Return the Event
-							return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(reasoning_content))));
+							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(crate::chat::ChatResponse {
+								content: vec![],
+								reasoning_content: Some(reasoning_content),
+								model_iden: self.options.model_iden.clone(),
+								provider_model_iden: self.options.model_iden.clone(),
+								usage: Usage::default(),
+							}))));
 						}
 						// If we do not have content, then log a trace message
 						else {

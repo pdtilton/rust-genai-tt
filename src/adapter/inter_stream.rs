@@ -5,7 +5,7 @@
 //!
 //! NOTE: This might be removed at some point as it may not be needed, and we could go directly to the GenAI stream.
 
-use crate::chat::Usage;
+use crate::chat::{ChatResponse, Usage};
 
 #[derive(Debug, Default)]
 pub struct InterStreamEnd {
@@ -23,7 +23,6 @@ pub struct InterStreamEnd {
 #[derive(Debug)]
 pub enum InterStreamEvent {
 	Start,
-	Chunk(String),
-	ReasoningChunk(String),
+	Chunk(ChatResponse),
 	End(InterStreamEnd),
 }

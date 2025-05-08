@@ -1,6 +1,6 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::{ChatOptionsSet, Usage};
+use crate::chat::{ChatOptionsSet, ChatResponse, ContentPart, MessageContent, Usage};
 use crate::{Error, ModelIden, Result};
 use reqwest_eventsource::{Event, EventSource};
 use serde_json::Value;
@@ -72,7 +72,14 @@ impl futures::Stream for AnthropicStreamer {
 								}
 							}
 
-							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
+							//return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
+							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(ChatResponse {
+								content: vec![MessageContent::Parts(vec![ContentPart::Text(content)])],
+								reasoning_content: None,
+								model_iden: self.options.model_iden.clone(),
+								provider_model_iden: self.options.model_iden.clone(),
+								usage: Usage::default(),
+							}))));
 						}
 						"content_block_stop" => {
 							continue;

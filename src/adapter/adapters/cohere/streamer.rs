@@ -1,7 +1,7 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::cohere::CohereAdapter;
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::ChatOptionsSet;
+use crate::chat::{ChatOptionsSet, ChatResponse, ContentPart, MessageContent, Usage};
 use crate::webc::WebStream;
 use crate::{Error, ModelIden, Result};
 use serde::Deserialize;
@@ -78,7 +78,14 @@ impl futures::Stream for CohereStreamer {
 												None => self.captured_data.content = Some(content.clone()),
 											}
 										}
-										InterStreamEvent::Chunk(content)
+										//InterStreamEvent::Chunk(content)
+										InterStreamEvent::Chunk(ChatResponse {
+											content: vec![MessageContent::Parts(vec![ContentPart::Text(content)])],
+											reasoning_content: None,
+											model_iden: self.options.model_iden.clone(),
+											provider_model_iden: self.options.model_iden.clone(),
+											usage: Usage::default(),
+										})
 									} else {
 										continue;
 									}

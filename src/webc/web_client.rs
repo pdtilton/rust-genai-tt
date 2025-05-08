@@ -99,6 +99,7 @@ impl WebResponse {
 
 		// Capture the body
 		let ct = header_map.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
+
 		let body = if ct.starts_with("application/json") {
 			res.json::<Value>().await?
 		} else {

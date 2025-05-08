@@ -1,6 +1,6 @@
 use super::Result;
 use bitflags::parser::to_writer;
-use genai::chat::{ChatStream, ChatStreamEvent, StreamEnd};
+use genai::chat::{ChatStream, ChatStreamEvent, InlineData, StreamEnd};
 use tokio_stream::StreamExt;
 
 /// A macro to retrieve the value of an `Option` field from a struct, returning an error if the field is `None`.
@@ -76,6 +76,8 @@ pub struct StreamExtract {
 	// The extracted text content (does not need to have capture ChatOptions)
 	pub content: Option<String>,
 
+	pub inline_data: Vec<InlineData>,
+
 	pub reasoning_content: Option<String>,
 }
 
@@ -84,12 +86,40 @@ pub async fn extract_stream_end(mut chat_stream: ChatStream) -> Result<StreamExt
 
 	let mut content: Vec<String> = Vec::new();
 	let mut reasoning_content: Vec<String> = Vec::new();
+	let mut inline_data: Vec<InlineData> = Vec::new();
 
 	while let Some(Ok(stream_event)) = chat_stream.next().await {
 		match stream_event {
 			ChatStreamEvent::Start => (), // nothing to do
-			ChatStreamEvent::Chunk(s_chunk) => content.push(s_chunk.content),
-			ChatStreamEvent::ReasoningChunk(s_chunk) => reasoning_content.push(s_chunk.content),
+			ChatStreamEvent::Chunk(s_chunk) => {
+				//content.push(s_chunk.content)
+				for message_content in s_chunk.content {
+					match message_content {
+						genai::chat::MessageContent::Text(text) => content.push(text),
+						genai::chat::MessageContent::Parts(content_parts) => {
+							for part in content_parts {
+								match part {
+									genai::chat::ContentPart::Text(text) => content.push(text),
+									genai::chat::ContentPart::Image { content_type, source } => {
+										let data = match source {
+											genai::chat::ImageSource::Url(url) => url,
+											genai::chat::ImageSource::Base64(b64) => b64.to_string(),
+										};
+										inline_data.push(InlineData {
+											data,
+											mime_type: content_type,
+										})
+									}
+								}
+							}
+						}
+						genai::chat::MessageContent::ToolCalls(tool_calls) => todo!(),
+						genai::chat::MessageContent::ToolResponses(tool_responses) => todo!(),
+					}
+				}
+			}
+			//ChatStreamEvent::ReasoningChunk(s_chunk) => reasoning_content.push(s_chunk.content),
+			//ChatStreamEvent::InlineData(s_inline_data) => inline_data.push(s_inline_data),
 			ChatStreamEvent::End(s_end) => {
 				stream_end = Some(s_end);
 				break;
@@ -104,6 +134,7 @@ pub async fn extract_stream_end(mut chat_stream: ChatStream) -> Result<StreamExt
 	Ok(StreamExtract {
 		stream_end,
 		content,
+		inline_data,
 		reasoning_content,
 	})
 }

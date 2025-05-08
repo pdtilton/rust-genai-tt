@@ -40,27 +40,32 @@ impl MessageContent {
 
 /// Getters
 impl MessageContent {
-	/// Returns the MessageContent as &str, only if it is MessageContent::Text
-	/// Otherwise, it returns None.
-	///
-	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
-	pub fn text_as_str(&self) -> Option<&str> {
-		match self {
-			MessageContent::Text(content) => Some(content.as_str()),
-			MessageContent::Parts(_) => None,
-			MessageContent::ToolCalls(_) => None,
-			MessageContent::ToolResponses(_) => None,
-		}
-	}
-
 	/// Consumes the MessageContent and returns it as &str,
 	/// only if it is MessageContent::Text; otherwise, it returns None.
 	///
 	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
-	pub fn text_into_string(self) -> Option<String> {
+	pub fn text_to_string(&self) -> Option<String> {
 		match self {
-			MessageContent::Text(content) => Some(content),
-			MessageContent::Parts(_) => None,
+			MessageContent::Text(content) => Some(content.clone()),
+			MessageContent::Parts(parts) => {
+				if parts.is_empty() {
+					None
+				} else {
+					Some(
+						parts
+							.into_iter()
+							.filter_map(|p| match p {
+								ContentPart::Image {
+									content_type: _,
+									source: _,
+								} => None,
+								ContentPart::Text(text) => Some(text.as_ref()),
+							})
+							.collect::<Vec<&str>>()
+							.join(""),
+					)
+				}
+			}
 			MessageContent::ToolCalls(_) => None,
 			MessageContent::ToolResponses(_) => None,
 		}

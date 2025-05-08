@@ -4,10 +4,11 @@ use crate::support::{
 	Check, Result, StreamExtract, assert_contains, contains_checks, extract_stream_end, get_big_content,
 	seed_chat_req_simple, seed_chat_req_tool_simple, validate_checks,
 };
+use futures::StreamExt;
 use genai::adapter::AdapterKind;
 use genai::chat::{
 	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ContentPart, ImageSource, JsonSpec,
-	ResponseModality, Tool, ToolResponse,
+	MessageContent, ResponseModality, SafetySettings, Tool, ToolResponse,
 };
 use genai::resolver::{AuthData, AuthResolver, AuthResolverFn, IntoAuthResolverFn};
 use genai::{Client, ClientConfig, ModelIden};
@@ -29,7 +30,8 @@ pub async fn common_test_chat_simple_ok(model: &str, checks: Option<Check>) -> R
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.content_text_as_str().ok_or("Should have content")?;
+	let content = chat_res.content_text_to_string().ok_or("Should have content")?;
+	println!("content str: {}", content);
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
@@ -76,10 +78,7 @@ pub async fn common_test_chat_multi_system_ok(model: &str) -> Result<()> {
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	assert!(
-		!get_option_value!(chat_res.content).is_empty(),
-		"Content should not be empty"
-	);
+	assert!(!chat_res.content.is_empty(), "Content should not be empty");
 	let usage = chat_res.usage;
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
@@ -131,7 +130,7 @@ Reply in a JSON format."#,
 	}
 
 	// Check content
-	let content = chat_res.content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
+	let content = chat_res.content_text_to_string().ok_or("SHOULD HAVE CONTENT")?;
 	// Parse content as JSON
 	let json: serde_json::Value = serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
 	// Pretty print JSON
@@ -198,7 +197,7 @@ Reply in a JSON format."#,
 	}
 
 	// Check content
-	let content = chat_res.content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
+	let content = chat_res.content_text_to_string().ok_or("SHOULD HAVE CONTENT")?;
 	// Parse content as JSON
 	let json_response: serde_json::Value =
 		serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
@@ -222,7 +221,7 @@ pub async fn common_test_chat_temperature_ok(model: &str) -> Result<()> {
 
 	// -- Check
 	assert!(
-		!chat_res.content_text_as_str().unwrap_or("").is_empty(),
+		!chat_res.content_text_to_string().unwrap_or_default().is_empty(),
 		"Content should not be empty"
 	);
 
@@ -239,7 +238,7 @@ pub async fn common_test_chat_stop_sequences_ok(model: &str) -> Result<()> {
 	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
 
 	let ai_content_lower = chat_res
-		.content_text_as_str()
+		.content_text_to_string()
 		.ok_or("Should have a AI response")?
 		.to_lowercase();
 
@@ -263,8 +262,8 @@ pub async fn common_test_chat_reasoning_normalize_ok(model: &str) -> Result<()> 
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	chat_res.content_text_as_str();
-	let content = chat_res.content_text_as_str().ok_or("Should have content")?;
+	chat_res.content_text_to_string();
+	let content = chat_res.content_text_to_string().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Reasoning Content
@@ -309,7 +308,7 @@ pub async fn common_test_chat_cache_simple_user_ok(model: &str) -> Result<()> {
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.content_text_as_str().ok_or("Should have content")?;
+	let content = chat_res.content_text_to_string().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
@@ -353,7 +352,7 @@ pub async fn common_test_chat_cache_simple_system_ok(model: &str) -> Result<()> 
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.content_text_as_str().ok_or("Should have content")?;
+	let content = chat_res.content_text_to_string().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
@@ -400,6 +399,7 @@ pub async fn common_test_chat_stream_simple_ok(model: &str, checks: Option<Check
 	let StreamExtract {
 		stream_end,
 		content,
+		inline_data,
 		reasoning_content,
 	} = extract_stream_end(chat_res.stream).await?;
 	let content = content.ok_or("extract_stream_end SHOULD have extracted some content")?;
@@ -446,6 +446,7 @@ pub async fn common_test_chat_stream_capture_content_ok(model: &str) -> Result<(
 	let StreamExtract {
 		stream_end,
 		content,
+		inline_data,
 		reasoning_content,
 	} = extract_stream_end(chat_res.stream).await?;
 
@@ -491,6 +492,7 @@ pub async fn common_test_chat_stream_capture_all_ok(model: &str, checks: Option<
 	let StreamExtract {
 		stream_end,
 		content,
+		inline_data,
 		reasoning_content,
 	} = extract_stream_end(chat_res.stream).await?;
 
@@ -512,7 +514,7 @@ pub async fn common_test_chat_stream_capture_all_ok(model: &str, checks: Option<
 
 	// -- Check captured_content
 	let captured_content = get_option_value!(stream_end.captured_content);
-	let captured_content = captured_content.text_as_str().ok_or("Captured content should have a text")?;
+	let captured_content = captured_content.text_to_string().ok_or("Captured content should have a text")?;
 	assert!(!captured_content.is_empty(), "captured_content.length should be > 0");
 
 	// -- Check Reasoning Content
@@ -549,8 +551,8 @@ pub async fn common_test_chat_image_url_ok(model: &str) -> Result<()> {
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	let res = chat_res.content_text_as_str().ok_or("Should have text result")?;
-	assert_contains(res, "duck");
+	let res = chat_res.content_text_to_string().ok_or("Should have text result")?;
+	assert_contains(&res, "duck");
 
 	Ok(())
 }
@@ -569,8 +571,8 @@ pub async fn common_test_chat_image_b64_ok(model: &str) -> Result<()> {
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	let res = chat_res.content_text_as_str().ok_or("Should have text result")?;
-	assert_contains(res, "duck");
+	let res = chat_res.content_text_to_string().ok_or("Should have text result")?;
+	assert_contains(&res, "duck");
 
 	Ok(())
 }
@@ -583,15 +585,16 @@ pub async fn common_test_chat_response_image_b64_ok(model: &str) -> Result<()> {
 	let mut chat_req = ChatRequest::default(); //.with_system("Answer in one sentence");
 	// This is similar to sending initial system chat messages (which will be cumulative with system chat messages)
 	chat_req = chat_req.append_message(ChatMessage::user(vec![ContentPart::from_text(
-		"Generate a small picture of a duck?",
+		"Generate a small picture of a duck.",
 	)]));
 
 	let options = ChatOptions::default().with_response_modality(vec![ResponseModality::Text, ResponseModality::Image]);
 
-	let chat_res = client.exec_chat(model, chat_req, Some(&options)).await?;
+	let mut chat_res = client.exec_chat(model, chat_req, Some(&options)).await?;
+	println!("chat_res: {:?}", chat_res);
 
 	// -- Check
-	let res = chat_res.content_as_b64_image().ok_or("Should have image result")?;
+	let res = chat_res.content_as_b64_image().first().ok_or("Should have iamge result")?;
 
 	Ok(())
 }
@@ -611,7 +614,7 @@ pub async fn common_test_tool_simple_ok(model: &str, complete_check: bool) -> Re
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	let mut tool_calls = chat_res.tool_calls().ok_or("Should have tool calls")?;
+	let mut tool_calls = chat_res.tool_calls();
 	let tool_call = tool_calls.pop().ok_or("Should have at least one tool call")?;
 	assert_eq!(tool_call.fn_arguments.x_get_as::<&str>("city")?, "Paris");
 	assert_eq!(tool_call.fn_arguments.x_get_as::<&str>("country")?, "France");
@@ -631,7 +634,7 @@ pub async fn common_test_tool_full_flow_ok(model: &str, complete_check: bool) ->
 
 	// -- Exec first request to get the tool calls
 	let chat_res = client.exec_chat(model, chat_req.clone(), None).await?;
-	let tool_calls = chat_res.into_tool_calls().ok_or("Should have tool calls in chat_res")?;
+	let tool_calls = chat_res.into_tool_calls();
 
 	// -- Exec the second request
 	// get the tool call id (first one)
@@ -647,7 +650,7 @@ pub async fn common_test_tool_full_flow_ok(model: &str, complete_check: bool) ->
 
 	// -- Check
 	let content = chat_res
-		.content_text_as_str()
+		.content_text_to_string()
 		.ok_or("Last response should be message")?
 		.to_lowercase(); // lowercase because some models send "Sunny" and not "sunny"
 
@@ -675,10 +678,7 @@ pub async fn common_test_resolver_auth_ok(model: &str, auth_data: AuthData) -> R
 	let chat_res = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	assert!(
-		!get_option_value!(chat_res.content).is_empty(),
-		"Content should not be empty"
-	);
+	assert!(!chat_res.content.is_empty(), "Content should not be empty");
 	let usage = chat_res.usage;
 	let total_tokens = get_option_value!(usage.total_tokens);
 	assert!(total_tokens > 0, "total_tokens should be > 0");
@@ -695,6 +695,7 @@ pub async fn common_test_list_models(adapter_kind: AdapterKind, contains: &str) 
 
 	// -- Exec
 	let models = client.all_model_names(adapter_kind).await?;
+	println!("models: {:?}", models);
 
 	// -- Check
 	assert_contains(&models, contains);
@@ -703,3 +704,26 @@ pub async fn common_test_list_models(adapter_kind: AdapterKind, contains: &str) 
 }
 
 // endregion: --- List
+
+pub async fn common_test_safety_settings_ok(model: &str) -> Result<()> {
+	// -- Setup & Fixtures
+	let client = Client::default();
+
+	// -- Build & Exec
+	let chat_req = ChatRequest::default()
+		.append_message(ChatMessage::user(vec![ContentPart::from_text(
+			"What are your safety settings?",
+		)]))
+		.append_safety_settings(vec![SafetySettings {
+			category: genai::chat::HarmCategory::CivicIntegrity,
+			threshold: genai::chat::SafetyThreshold::BlockLowAndAbove,
+		}]);
+
+	let options = ChatOptions::default();
+
+	// -- Exec first request to get the tool calls
+	let chat_res = client.exec_chat(model, chat_req.clone(), Some(&options)).await?;
+	// -- Check
+
+	Ok(())
+}
